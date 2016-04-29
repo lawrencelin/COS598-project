@@ -23,7 +23,8 @@ int main()
 
 	float_dataset ds("xor8.txt", 256, 8, 1);
 	float_trainer t(ann, ds);
-	cout<<"Final training RMSE: "<<t.train(100)<<"\n";
+	float err = t.train(1);
+	cout<<"Final training RMSE: "<<err<<"\n";
 	return 0;
 }
 

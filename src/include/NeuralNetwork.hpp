@@ -12,6 +12,7 @@
 #include <utility>
 #include <cassert>
 #include <tuple>
+#include <numeric>
 
 namespace NN
 {
@@ -21,32 +22,45 @@ namespace NN
 	class NeuralLayer
 	{
 	private:
+		size_t in_sz;
 		size_t sz;
-		// bool bias;
 		vector<vector<Ty>> w; // weight
-
 		vector<Ty> b; // bias
+		typedef typename vector<vector<Ty>>::iterator neuron_iter;
 	public:
 		typedef Ty data_type;
-		// bool hasBiase() {return bias; }
-		// int size() {return sz + (bias ? 1: 0); }
 		NeuralLayer(size_t in, size_t out)
-		: sz(out), w(out, vector<Ty>(in)), b(out)
+		: in_sz(in), sz(out), w(out, vector<Ty>(in)), b(out)
 		{
 			Ty r = sqrt(6.0/(in + out));
 			
 			mt19937 gen((random_device()()));
 			uniform_real_distribution<Ty> dist(-r, r);
 
-			for (auto &w_i : w)
-				for (Ty &w_ij : w_i)
-					w_ij = dist(gen);
+			for (auto &w_i : w) for (Ty &w_ij : w_i) w_ij = dist(gen);
 
-			for (Ty &b_i : b)
-				b_i = dist(gen);
+			for (Ty &b_i : b) b_i = dist(gen);
 		}
-		~NeuralLayer() {};
-		size_t size() {return sz;}
+		virtual ~NeuralLayer() {}
+		size_t size() const {return sz;}
+		size_t input_size() const  {return in_sz;}
+
+		neuron_iter begin() const {return w.begin(); }
+		neuron_iter end() const {return w.end(); }
+
+		template <class InputIter, class OutputIter>
+		void feedforward(InputIter in, OutputIter out)
+		{
+			auto b_iter = b.begin();
+			for (auto &w_i : w)
+				*(out++) = act_fn(inner_product(w_i.begin(), w_i.end(), in, (data_type)0.0) + *(b_iter++));
+		}
+
+		Ty act_fn(Ty x) { return (Ty)1.0/(1.0 + exp(-x)); }
+		// Ty act_fn_derived(Ty fx) { return (Ty)fx * (1.0 - fx); }
+
+
+
 
 
 
@@ -57,8 +71,20 @@ namespace NN
 	{
 	private:
 		// Not counting input layers: input x hidden x output = 2 layers.
-		typedef unique_ptr<NeuralLayer<Ty> > layer_type;
+		typedef unique_ptr<NeuralLayer<Ty> > layer_type; // using pointers to allow classes derived from NeuralLayer
+		typedef typename vector<layer_type>::const_iterator layer_iter;
 		vector<layer_type> layers;
+		
+
+		class reverse_adapter{
+		private:
+			vector<layer_type>& layers;
+			typedef typename vector<layer_type>::const_reverse_iterator rev_iter;
+		public:
+			reverse_adapter(vector<layer_type>& layers): layers(layers) {}
+			rev_iter begin() const {return layers.crbegin();}
+			rev_iter end() const { return layers.crend();}
+		};
 	public:
 		typedef Ty data_type;
 		NeuralNetwork(initializer_list<size_t> l)
@@ -78,38 +104,41 @@ namespace NN
 				in = out;
 			}
 		}
-		~NeuralNetwork() {};
-		// int size() {return layers.size();}
+		virtual ~NeuralNetwork() {}
+		layer_iter begin() const { return layers.cbegin(); }
+		layer_iter end() const { return layers.cend(); }
+		size_t size() const {return layers.size();}
+		reverse_adapter rev() {return reverse_adapter(layers);}
 	};
 
 	template <class Ty>
 	class DataSet
 	{
 	private:
-		typedef pair<vector<Ty>, vector<Ty>> DataPt;
-		int in_sz;
-		int out_sz;
-		vector<DataPt> data;
+		typedef pair<vector<Ty>, vector<Ty>> sample;
+		typedef typename vector<sample>::const_iterator sample_iter;
+		size_t in_sz;
+		size_t out_sz;
+		vector<sample> data;
 	public:
-		typedef typename vector<DataPt>::const_iterator DataPtIter;
-		DataSet(const char *f, int n, int in_sz, int out_sz)  // if n * (in_sz + out_sz) > #of data in file, this function crashes.
+		DataSet(const char *f, size_t n, size_t in_sz, size_t out_sz)  // if n * (in_sz + out_sz) > #of data in file, this function crashes.
 		:	in_sz(in_sz), out_sz(out_sz), 
-			data(n, DataPt(piecewise_construct, forward_as_tuple(in_sz), forward_as_tuple(out_sz)))
+			data(n, sample(piecewise_construct, forward_as_tuple(in_sz), forward_as_tuple(out_sz)))
 		{
 			ifstream fs(f);
 			assert("Cannot open file" && fs.is_open());
-			istream_iterator<Ty> read_file(fs);
+			istream_iterator<Ty> file_reader(fs);
 			// istreambuf_iterator<Ty> end_file;
-			for (DataPt &dp : data){
+			for (sample &dp : data){
 				for (Ty &ref : dp.first)
-					ref = *(read_file++);
+					ref = *(file_reader++);
 				for (Ty &ref : dp.second)
-					ref = *(read_file++);
+					ref = *(file_reader++);
 			}
 		}
-		DataPtIter begin() const { return data.cbegin(); }
-		DataPtIter end() const { return data.cend(); }
-		size_t size() {return data.size(); }
+		sample_iter begin() const { return data.cbegin(); }
+		sample_iter end() const { return data.cend(); }
+		size_t size() const {return data.size(); }
 	};
 
 	template <class ANN, class DataRange>
@@ -118,54 +147,79 @@ namespace NN
 	private:
 		ANN &ann;
 		typedef typename ANN::data_type data_type;
+
+		vector<vector<data_type>> act; // act[i][j] = activation of layer_i, neural_j
+		vector<data_type> &output_act;
+		vector<vector<data_type>> slope; // slope[i][j] = d(Err)/d(input_j) of layer_i, neural_j
+		vector<vector<vector<data_type>>> partial_dw; // partial_dw[i][j][k] = d(k-th input weight) of layer_i, neural_j
 		const DataRange &data_range;
-		size_t n_data;
 		data_type sum_sq_err;
 
 
 		template <class Input>
 		void feedforward(const Input &input)
 		{
-
+			bool _1st = true;
+			auto act_iter = act.begin();
+			for (auto &layer: ann) {
+				// for each layer
+				if (_1st) layer->feedforward(input.begin(), act_iter->begin());
+				else      layer->feedforward((act_iter - 1)->begin(), act_iter->begin());
+				_1st = false;
+				++act_iter;
+			}
 		}
 
 		template <class Output>
 		data_type compute_MSE(const Output &target)
 		{
-			return 0.0;
+			return inner_product(target.begin(), target.end(), output_act.begin(), 0.0, plus<data_type>(), 
+				[](data_type t, data_type o){ return (t-o)*(t-o);}) / target.size();
 		}
 
 		template <class Output>
 		void backpropagate(const Output &target)
 		{
-
+			for (auto &layer: ann.rev());
 		}
 		
 		data_type compute_batch_RMSE()
 		{
-			return sqrt(sum_sq_err / n_data);
+			return sqrt(sum_sq_err / data_range.size());
 		}
 		
-		void apply_deltaw()
+		void apply_dw()
 		{
 
 		}
 	public:
 		BatchTrainer(ANN &ann, const DataRange &data_range)
-		: ann(ann), data_range(data_range)
+		:	ann(ann), act(ann.size()), output_act(act[ann.size()-1]),
+			slope(ann.size()), partial_dw(ann.size()), data_range(data_range)
 		{
-			cout<<"Trainer initilized.\n";
+			
+			// better with zip_iterator
+
+			auto act_iter = act.begin();
+			auto slope_iter = slope.begin();
+			auto dw_iter = partial_dw.begin();
+			for (auto &layer : ann){
+				act_iter->resize(layer->size());
+				slope_iter->resize(layer->size());
+				dw_iter->resize(layer->size(), vector<data_type>(layer->input_size()));
+				++act_iter, ++slope_iter, ++dw_iter;
+			}
 		}
-		data_type train(int epochs) // return final RSME
+		data_type train(size_t epochs) // return final RSME
 		{
-			for (int i = 0; i < epochs; ++i){
+			for (size_t i = 0; i < epochs; ++i){
 				sum_sq_err = 0;
 				for (auto &data : data_range){
 					this->feedforward(data.first);
 					this->backpropagate(data.second);
 				}
 				cout<<"Epoch "<<(i+1)<<": RMSE "<<compute_batch_RMSE()<<"\n";
-				this->apply_deltaw();
+				this->apply_dw();
 			}
 
 			sum_sq_err = 0.0;
