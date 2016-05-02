@@ -9,7 +9,7 @@ HEADERS := $(wildcard $(INC_DIR)/*.hpp)
 # OBJ := $(SRC:.cpp=.o)
 
 CXX := clang++
-CXXFLAGS :=  -I $(INC_DIR) -O3 -std=c++14 -stdlib=libc++ -g -Wall -Weverything -Wno-c++98-compat -Wno-padded -Wno-old-style-cast
+CXXFLAGS :=  -I $(INC_DIR) -O3 -std=c++14 -stdlib=libc++ -g -Wall -Weverything -Wno-c++98-compat -Wno-padded -Wno-old-style-cast -Wno-conversion
 
 
 all: test

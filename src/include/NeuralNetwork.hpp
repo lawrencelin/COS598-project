@@ -79,16 +79,16 @@ namespace NN
 			Ty r = sqrt((Ty)6.0/(in + out));
 			// Ty r = 5;
 			
-			mt19937 gen((random_device()()));
+			// mt19937 gen((random_device()()));
+			mt19937 gen;
 			uniform_real_distribution<Ty> dist(-r, r);
 
 			for (auto &w_i : w) for (Ty &w_ij : w_i) w_ij = dist(gen);
 
 			for (Ty &b_i : b) b_i = dist(gen);
 		}
-		NeuralLayer(const NeuralLayer& rhs) = delete;
-		NeuralLayer(NeuralLayer& rhs) = delete;
-		virtual ~NeuralLayer() {}
+
+		// virtual ~NeuralLayer() {}
 		size_t size() const {return sz;}
 		size_t input_size() const  {return in_sz;}
 
@@ -157,14 +157,16 @@ namespace NN
 		{
 			size_t in, i = 0;
 			for (size_t out : l) {
-				if (i) layers[i-1] = std::make_unique<NeuralLayer<Ty>>(in, out, (i + 1 == l.size()) ? ActFn::Linear : ActFn::Tanh);
+				if (i) layers[i-1] = make_unique<NeuralLayer<Ty>>(in, out, (i + 1 == l.size()) ? ActFn::Linear : ActFn::Tanh);
 				in = out;
 				++i;
 			}
 		}
-		NeuralNetwork(const NeuralNetwork& rhs) = delete;
-		NeuralNetwork(NeuralNetwork& rhs) = delete;
-		virtual ~NeuralNetwork() {}
+		NeuralNetwork(const NeuralNetwork& rhs) 
+		: layers(rhs.size()) {
+			for (size_t i = 0; i < layers.size(); ++i) layers[i] = make_unique<NeuralLayer<Ty>>(*rhs.layers[i]);
+		}
+		// virtual ~NeuralNetwork() {}
 		layer_iter begin() const { return layers.cbegin(); }
 		layer_iter end() const { return layers.cend(); }
 		size_t size() const {return layers.size();}
@@ -302,8 +304,9 @@ namespace NN
 		}
 		void print_progress(size_t i, size_t epochs) {
 			size_t one_percent = epochs / 100;
-			if (i % one_percent == 0)
-				cout<<(i/one_percent)<<"% epoch "<<i<<": error "<<compute_batch_error()<<"\n";
+			double percentage = 100.0 * i / epochs;
+			if (!one_percent || i % one_percent == 0)
+				cout<<percentage<<"% epoch "<<i<<": error "<<compute_batch_error()<<"\n";
 		}
 		data_type train_epilogue() {
 			sum_err = 0.0;
@@ -631,7 +634,7 @@ namespace NN
 						wij -= (prev_dw[l][j][i] = c * sum_dw + momentum * prev_dw[l][j][i]);
 						++i;
 					}
-					data_type sum_db = (data_type)0.0;
+					data_type sum_db = 0;
 					for (auto & it: db_iters) sum_db += it->at(j);
 					*bj_iter -= (prev_db[l][j] = c * sum_db + momentum * prev_db[l][j]);
 
