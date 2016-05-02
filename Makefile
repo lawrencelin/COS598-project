@@ -9,12 +9,11 @@ HEADERS := $(wildcard $(INC_DIR)/*.hpp)
 # OBJ := $(SRC:.cpp=.o)
 
 CXX := clang++
-CXXFLAGS :=  -I $(INC_DIR) -O0 -std=c++14 -stdlib=libc++ -g -Wall
-# -Weverything -Wno-c++98-compat -Wno-padded -Wno-header-hygiene -Wno-sign-compare -Wno-shorten-64-to-32 -Wno-unused-parameter -Wno-missing-field-initializers  -Wno-sign-conversion -Wno-shadow -Wno-exit-time-destructors -Wno-global-constructors -Wno-return-type
+CXXFLAGS :=  -I $(INC_DIR) -O3 -std=c++14 -stdlib=libc++ -g -Wall -Weverything -Wno-c++98-compat -Wno-padded -Wno-old-style-cast
+
 
 all: test
 
-# test: $(MAIN) $(OBJ)
 test: $(MAIN) $(HEADERS)
 	$(CXX) $(CXXFLAGS) -o $@ $(MAIN)
 

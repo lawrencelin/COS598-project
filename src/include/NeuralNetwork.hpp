@@ -1,5 +1,5 @@
-#ifndef __NEURALNETWORK_H
-#define __NEURALNETWORK_H
+#ifndef NN_NEURALNETWORK_H
+#define NN_NEURALNETWORK_H
 
 #include <initializer_list>
 #include <vector>
@@ -13,11 +13,22 @@
 #include <cassert>
 #include <tuple>
 #include <numeric>
+#include <thread>
+
+// #include <boost/range/iterator_range.hpp>
+// #include <boost/range/algorithm.hpp>
+// #include <boost/range/iterator.hpp>
 
 namespace NN
 {
 	using namespace std;
-	
+	// using namespace boost;
+	enum class ActFn
+	{
+		Sigmoid = 1,
+		Tanh,
+		Linear
+	};
 	template <class Ty>
 	class NeuralLayer
 	{
@@ -26,6 +37,7 @@ namespace NN
 		size_t sz;
 		vector<vector<Ty>> w; // weight
 		vector<Ty> b; // bias
+		ActFn act;
 		typedef typename vector<vector<Ty>>::iterator neuron_iter;
 		typedef typename vector<Ty>::iterator bias_iter;
 		typedef typename vector<vector<Ty>>::const_iterator const_neuron_iter;
@@ -35,7 +47,7 @@ namespace NN
 			size_t column;
 			const_neuron_iter it;
 		public:
-			column_iterator(const_neuron_iter it, size_t idx) : column(idx), it(it) {}
+			column_iterator(const_neuron_iter _it, size_t idx) : column(idx), it(_it) {}
 			column_iterator(const column_iterator& cit) : column(cit.column), it(cit.it) {}
 			column_iterator& operator++() {++it;return *this;}
 			column_iterator operator++(int) {column_iterator tmp(*this); operator++(); return tmp;}
@@ -43,12 +55,28 @@ namespace NN
 			bool operator!=(const column_iterator& rhs) {return !(*this == rhs);}
 			const Ty& operator*() {return it->at(column); }
 		};
+
 	public:
+		void print(){
+			switch (act){
+				case ActFn::Sigmoid: cout<<"Sigmoid"; break;
+				case ActFn::Tanh: cout<<"Tanh"; break;
+				case ActFn::Linear: cout<<"Linear"; break;
+			}
+			cout<<"Layer "<<in_sz<<" input, "<<sz<<" output.\nWeight:\n";
+			for (auto &w_j : w){
+				for (auto w_ij: w_j) cout<<w_ij<<" ";
+				cout<<"\n";
+			}
+			cout<<"Bias:\n";
+			for (auto b_j : b) cout<<b_j<<" ";
+			cout<<"\n";
+		}
 		typedef Ty data_type;
-		NeuralLayer(size_t in, size_t out)
-		: in_sz(in), sz(out), w(out, vector<Ty>(in)), b(out)
+		NeuralLayer(size_t in, size_t out, ActFn _act = ActFn::Sigmoid)
+		: in_sz(in), sz(out), w(out, vector<Ty>(in)), b(out), act(_act)
 		{
-			Ty r = sqrt(6.0/(in + out));
+			Ty r = sqrt((Ty)6.0/(in + out));
 			// Ty r = 5;
 			
 			mt19937 gen((random_device()()));
@@ -58,6 +86,8 @@ namespace NN
 
 			for (Ty &b_i : b) b_i = dist(gen);
 		}
+		NeuralLayer(const NeuralLayer& rhs) = delete;
+		NeuralLayer(NeuralLayer& rhs) = delete;
 		virtual ~NeuralLayer() {}
 		size_t size() const {return sz;}
 		size_t input_size() const  {return in_sz;}
@@ -76,8 +106,22 @@ namespace NN
 				*(out++) = act_fn(inner_product(w_i.cbegin(), w_i.cend(), in, (data_type)0.0) + *(b_iter++));
 		}
 
-		Ty act_fn(Ty x) { return (Ty)1.0/(1.0 + exp(-x)); }
-		Ty act_fn_derived(Ty fx) { return (Ty)fx * (1.0 - fx); }
+		Ty act_fn(Ty x) {
+			// assert(!isnan(x));
+			switch (act){
+				case ActFn::Sigmoid: return (Ty)1.0/((Ty)1.0 + exp(-x));
+				case ActFn::Tanh: return tanh(x);
+				case ActFn::Linear: return x;
+			}
+		}
+		Ty act_fn_derived(Ty fx) {
+			// assert(!isnan(x));
+			switch (act){
+				case ActFn::Sigmoid: return (Ty)fx * ((Ty)1.0 - fx);
+				case ActFn::Tanh: return (Ty)1.0 - fx * fx;
+				case ActFn::Linear: return (Ty)1.0;
+			}
+	}
 
 		column_iterator w_col_iter(size_t idx) { return column_iterator(w.cbegin(), idx);}
 	};
@@ -97,30 +141,29 @@ namespace NN
 			vector<layer_type>& layers;
 			typedef typename vector<layer_type>::const_reverse_iterator rev_iter;
 		public:
-			reverse_adapter(vector<layer_type>& layers): layers(layers) {}
+			reverse_adapter(vector<layer_type>& _layers): layers(_layers) {}
 			rev_iter begin() const {return layers.crbegin();}
 			rev_iter end() const { return layers.crend();}
 		};
+
 	public:
 		typedef Ty data_type;
 		typedef typename layer_type::pointer layer_ptr;
-		NeuralNetwork(initializer_list<size_t> l)
+		void print() {for (auto &layer: layers) layer->print();}
+		NeuralNetwork(const initializer_list<size_t> l)
 		: layers((
 			assert("NeuralNetwork must be initilized with at least one non-input layer!" && l.size() > 1)
 			,l.size() - 1))
 		{
-			bool is_input_layer = true;
 			size_t in, i = 0;
 			for (size_t out : l) {
-				if (is_input_layer) {
-					in = out;
-					is_input_layer = false;
-					continue;
-				}
-				layers[i++] = std::make_unique<NeuralLayer<Ty>>(in, out);
+				if (i) layers[i-1] = std::make_unique<NeuralLayer<Ty>>(in, out, (i + 1 == l.size()) ? ActFn::Linear : ActFn::Tanh);
 				in = out;
+				++i;
 			}
 		}
+		NeuralNetwork(const NeuralNetwork& rhs) = delete;
+		NeuralNetwork(NeuralNetwork& rhs) = delete;
 		virtual ~NeuralNetwork() {}
 		layer_iter begin() const { return layers.cbegin(); }
 		layer_iter end() const { return layers.cend(); }
@@ -137,8 +180,8 @@ namespace NN
 	public:
 		typedef pair<vector<Ty>, vector<Ty>> sample;
 		typedef typename vector<sample>::const_iterator sample_iter;
-		DataSet(const char *f, size_t n, size_t in_sz, size_t out_sz)  // if n * (in_sz + out_sz) > #of data in file, this function crashes.
-		:	in_sz(in_sz), out_sz(out_sz), 
+		DataSet(const char *f, size_t n, size_t _in_sz, size_t _out_sz)  // if n * (in_sz + out_sz) > #of data in file, this function crashes.
+		:	in_sz(_in_sz), out_sz(_out_sz), 
 			data(n, sample(piecewise_construct, forward_as_tuple(in_sz), forward_as_tuple(out_sz)))
 		{
 			ifstream fs(f);
@@ -160,7 +203,7 @@ namespace NN
 	};
 
 	template <class ANN, class DataRange>
-	class BatchTrainer
+	class Trainer
 	{
 	private:
 		ANN &ann;
@@ -183,6 +226,8 @@ namespace NN
 		data_type sum_err;
 		data_type learning_rate;
 		data_type momentum;
+
+		bool multi_thread;
 		
 		template <class Input>
 		void feedforward(const Input &input)
@@ -194,12 +239,11 @@ namespace NN
 				++l;
 			}
 		}
-
-		template <class Output>
+ 		template <class Output>
 		data_type compute_error(const Output &target) // mean_sq_err
 		{
-			return inner_product(target.cbegin(), target.cend(), output_act.cbegin(), 0.0, plus<data_type>(), 
-				[](data_type t, data_type o){ return (t-o)*(t-o);}) / target.size();
+			return inner_product(target.cbegin(), target.cend(), output_act.cbegin(), (data_type)0.0, plus<data_type>(), 
+				[](data_type t, data_type o){ return (t-o)*(t-o);}) / (data_type)target.size();
 		}
 
 		data_type compute_error_derived(const data_type o, const data_type t) { return (o-t); }
@@ -214,7 +258,7 @@ namespace NN
 					data_type neuron_act = act[l][j];
 					data_type act_derived = layer->act_fn_derived(neuron_act);
 					if (l == ann.size() - 1) slope[l][j] = compute_error_derived(neuron_act, target[j]) * act_derived;
-					else slope[l][j] = inner_product(slope[l+1].begin(), slope[l+1].end(), next_layer->w_col_iter(j), 0.0) * act_derived;
+					else slope[l][j] = inner_product(slope[l+1].begin(), slope[l+1].end(), next_layer->w_col_iter(j), (data_type)0.0) * act_derived;
 					for (size_t i = 0; i < layer->input_size(); ++i){
 						if (l) (*partial_dw)[l][j][i] += slope[l][j] * act[l - 1][i];
 						else (*partial_dw)[l][j][i] += slope[l][j] * input[i];
@@ -227,9 +271,9 @@ namespace NN
 		}
 		data_type compute_batch_error() { return sqrt(sum_err / data_range.size()); }
 		
-		void apply_dw()
+		void apply_dw(size_t n_samples)
 		{
-			data_type c = learning_rate / data_range.size();
+			data_type c = learning_rate / n_samples;
 
 			size_t l = 0;
 			for (auto &layer: ann){
@@ -256,16 +300,31 @@ namespace NN
 			prev_dw.swap(partial_dw);
 			prev_db.swap(partial_db);
 		}
-	public:
-		BatchTrainer(ANN &ann, const DataRange &data_range, data_type alpha = 0.01, data_type beta = 0.9)
-		:	ann(ann), act(ann.size()), output_act(act[ann.size()-1]), slope(ann.size()), 
-			prev_dw(make_unique<V3D>(ann.size())), partial_dw(make_unique<V3D>(ann.size())),
-			prev_db(make_unique<V2D>(ann.size())), partial_db(make_unique<V2D>(ann.size())),
-			data_range((assert("Dataset must not be empty" && data_range.size()), data_range)),
-			learning_rate(alpha), momentum(beta)
-		{
-			vector<V2D*> init_list_2d = {&act, &slope, prev_db.get(), partial_db.get()};
-			vector<V3D*> init_list_3d = {prev_dw.get(), partial_dw.get()};
+		void print_progress(size_t i, size_t epochs) {
+			size_t one_percent = epochs / 100;
+			if (i % one_percent == 0)
+				cout<<(i/one_percent)<<"% epoch "<<i<<": error "<<compute_batch_error()<<"\n";
+		}
+		data_type train_epilogue() {
+			sum_err = 0.0;
+			for (auto &data : data_range){
+				feedforward(data.first);
+				cout<<"test---";
+				for( auto v :data.first) cout<<v<<" ";
+				cout<<"answer:";
+				for( auto v :output_act) cout<<v<<" ";
+					cout<<" should be:";
+				for( auto v :data.second) cout<<v<<" ";
+					cout<<"\n";
+				sum_err += compute_error(data.second);
+			}
+			ann.print();
+			return compute_batch_error();
+		}
+		void fill_zero_2d(V2D &v2d) {for (auto &v1d:v2d) fill(v1d.begin(), v1d.end(), 0.0); }
+		void fill_zero_3d(V3D &v3d) {for (auto &v2d:v3d) fill_zero_2d(v2d); }
+
+		void init_vectors(const vector<V2D*>& init_list_2d, const vector<V3D*>& init_list_3d) {
 			size_t l = 0;
 			for (auto &layer : ann){
 				for (V2D *v: init_list_2d)
@@ -275,49 +334,372 @@ namespace NN
 				++l;
 			}
 		}
-		data_type train(size_t epochs) // return final error
+	public:
+		Trainer(ANN &_ann, const DataRange &_data_range, data_type alpha = (data_type)0.01, data_type beta = (data_type)0.9)
+		:	ann(_ann), act(ann.size()), output_act(act[ann.size()-1]), slope(ann.size()), 
+			prev_dw(make_unique<V3D>(ann.size())), partial_dw(make_unique<V3D>(ann.size())),
+			prev_db(make_unique<V2D>(ann.size())), partial_db(make_unique<V2D>(ann.size())),
+			data_range((assert("Dataset must not be empty" && _data_range.size()), _data_range)),
+			learning_rate(alpha), momentum(beta), multi_thread(false)
 		{
-			auto fill_zero_2d = [](V2D &v2d){for(auto &v1d:v2d)fill(v1d.begin(), v1d.end(), 0.0);};
-			auto fill_zero_3d = [fill_zero_2d](V3D &v3d){for(auto &v2d:v3d)fill_zero_2d(v2d);};
+			init_vectors(
+				{&act, &slope, prev_db.get(), partial_db.get()},
+				{prev_dw.get(), partial_dw.get()});
+		}
 
+		// construct multi-thread trainer;
+		Trainer(bool placeholer, ANN &_ann, const DataRange &_data_range)
+		:	ann(_ann), act(ann.size()), output_act(act[ann.size()-1]), slope(ann.size()), 
+			partial_dw(make_unique<V3D>(ann.size())), partial_db(make_unique<V2D>(ann.size())),
+			data_range((assert("Dataset must not be empty" && _data_range.size()), _data_range)), multi_thread(true)
+		{
+			placeholer = true;
+			init_vectors(
+				{&act, &slope, partial_db.get()},
+				{partial_dw.get()});
+		}
+
+		Trainer(const Trainer& rhs) = delete;
+		Trainer(Trainer& rhs) = delete;
+
+		data_type train_stochastic(size_t epochs)
+		{
+			assert("multi-thread trainer" && !multi_thread);
+			fill_zero_3d(*prev_dw);
+			fill_zero_2d(*prev_db);
+			for (size_t i = 0; i < epochs; ++i) {
+				sum_err = 0;
+				for (auto &data : data_range){
+					fill_zero_3d(*partial_dw);
+					fill_zero_2d(*partial_db);
+					feedforward(data.first);
+					backpropagate(data.first, data.second);
+					sum_err += compute_error(data.second);
+					apply_dw(1);
+				}
+				print_progress(i, epochs);
+			}
+			return train_epilogue();
+		}
+
+		data_type train_minibatch(size_t epochs, size_t batch_sz)
+		{
+			assert("multi-thread trainer" && !multi_thread);
+			fill_zero_3d(*prev_dw);
+			fill_zero_2d(*prev_db);
+			for (size_t i = 0; i < epochs; ++i) {
+				sum_err = 0;
+				auto data_iter = data_range.begin();
+				auto data_end = data_range.end();
+				size_t cnt = 0;
+				while (data_iter != data_end){
+					fill_zero_3d(*partial_dw);
+					fill_zero_2d(*partial_db);
+					feedforward(data_iter->first);
+					backpropagate(data_iter->first, data_iter->second);
+					sum_err += compute_error(data_iter->second);					
+					++data_iter, ++cnt;
+					if (cnt == batch_sz || data_iter == data_end){
+						apply_dw(cnt);
+						cnt = 0;
+					}
+				}
+				print_progress(i, epochs);
+			}
+			return train_epilogue();
+		}
+
+		data_type train_batch(size_t epochs) // return final error
+		{
+			assert("multi-thread trainer" && !multi_thread);
 			fill_zero_3d(*prev_dw);
 			fill_zero_2d(*prev_db);
 			for (size_t i = 0; i < epochs; ++i){
 				sum_err = 0;
 				fill_zero_3d(*partial_dw);
 				fill_zero_2d(*partial_db);
-				
 				for (auto &data : data_range){
-					if (i == epochs - 1){
-						cout<<"do something";
-					}
 					feedforward(data.first);
 					backpropagate(data.first, data.second);
 					sum_err += compute_error(data.second);
 				}
-				cout<<"Epoch "<<(i+1)<<": error "<<compute_batch_error()<<"\n";
-				apply_dw();
+				print_progress(i, epochs);
+				apply_dw(data_range.size());
 			}
-
+			return train_epilogue();
+		}
+		// return sum of errors
+		data_type train_multi_thread()
+		{
+			assert("multi-thread trainer" && multi_thread);
+			fill_zero_3d(*partial_dw);
+			fill_zero_2d(*partial_db);
+			sum_err = 0;
+			for (auto &data : data_range){
+				feedforward(data.first);
+				backpropagate(data.first, data.second);
+				sum_err += compute_error(data.second);
+			}
+			return sum_err;
+		}
+		data_type train_epilogue_multi_thread() {
 			sum_err = 0.0;
 			for (auto &data : data_range){
 				feedforward(data.first);
 				cout<<"test---";
-				for( auto v :data.first) cout<<v;
+				for( auto v :data.first) cout<<v<<" ";
 				cout<<"answer:";
-				for( auto v :output_act) cout<<v;
+				for( auto v :output_act) cout<<v<<" ";
 					cout<<" should be:";
-				for( auto v :data.second) cout<<v;
+				for( auto v :data.second) cout<<v<<" ";
 					cout<<"\n";
 				sum_err += compute_error(data.second);
 			}
-			return compute_batch_error();
+			return sum_err;
 		}
+		typedef typename V2D::const_iterator V2D_iter;
+		typedef typename V3D::const_iterator V3D_iter;
 
-		~BatchTrainer() {}
-		
+		V3D_iter dw_begin() const { return partial_dw->cbegin(); }
+		V3D_iter dw_end() const { return partial_dw->cend(); }
+		V2D_iter db_begin() const { return partial_db->cbegin(); }
+		V2D_iter db_end() const { return partial_db->cend(); }
 	};
 
+	template<class T>
+	class sub_range {
+	private:
+		typedef typename T::sample_iter iter;
+		const T &t;
+		size_t start, sz;
+	public:
+		sub_range(const T &_t, size_t _start, size_t _sz)
+		: t(_t), start(_start), sz(_sz) 
+		{
+			// cout<<"sub_range init"<<start<<" "<<sz<<"\n";
+		}
+		sub_range(const sub_range&) = delete;
+		iter begin() const {
+			// cout<<"sub_range begin "<<start<<" "<<sz<<"\n";
+			return t.begin() + (long)start;
+		}
+		iter end() const {
+			// cout<<"sub_range end "<<start<<" "<<sz<<"\n";
+			return t.begin() + (long)start + (long)sz;
+		}
+		size_t size() const {
+			// cout<<"sub_range size "<<start<<" "<<sz<<"\n";
+			return sz;
+		}
+	};
+
+	enum class JobCode{
+		NOP = 0,
+		Compute = 1,
+		Exit = 2
+	};
+	enum class ReplyCode{
+		NOP = 0,
+		Completed = 1
+	};
+
+	inline ostream& operator<<(ostream &os, const enum JobCode j) {
+		string str;
+		switch (j){
+			case JobCode::NOP: str = "NOP"; break;
+			case JobCode::Compute: str = "Compute"; break;
+			case JobCode::Exit: str = "Exit"; break;
+		}
+		return os<<"JobCode::"+str;
+	}
+
+	inline ostream& operator<<(ostream &os, const enum ReplyCode r) {
+		string str;
+		switch (r){
+			case ReplyCode::NOP: str = "NOP"; break;
+			case ReplyCode::Completed: str = "Completed"; break;
+		}
+		return os<<"ReplyCode::"+str;
+	}
+
+	template<class First, class Second>
+	inline ostream& operator<<(ostream &os, const pair<First, Second> &p) {
+		return os<<"("<<p.first<<", "<<p.second<<")";
+	}
+
+	template<class T>
+	class sync_channel{
+	private:
+		condition_variable cv;
+		mutex cv_m;
+		string name;
+		vector<T> v;
+	public:
+		sync_channel(const string _name, const size_t _n): name(_name), v(_n) {
+			assert("Must not be empty!" && _n);
+		}
+		void set(size_t k, T t = T()) {
+			unique_lock<mutex> l(cv_m);
+			v[k] = t;
+			// cout<<name<<" [set] loc:"<<k<<" "<<t<<"\n";
+			cv.notify_all();
+		}
+		void set_all(T t = T()) {
+			unique_lock<mutex> l(cv_m);
+			fill(v.begin(), v.end(), t);
+			// cout<<name<<" [set-all] "<<t<<"\n";
+			cv.notify_all();
+		}
+		T get(size_t k) {
+			unique_lock<mutex> l(cv_m);
+			cv.wait(l, [this, k](){return this->v[k] != T();});
+			T t = v[k];
+			// cout<<name<<" [get] location:"<<k<<" "<<t<<"\n";
+			v[k] = (T)0;
+			return t;
+		}
+		vector<T> get_all() {
+			unique_lock<mutex> l(cv_m);
+			cv.wait(l, [this](){return count(this->v.begin(), this->v.end(), T()) == 0;});
+			// cout<<name<<" [get-all]\n";
+			vector<T> ret = v;
+			fill(v.begin(), v.end(), T());
+			return ret;
+		}
+	};
+
+	template <class ANN, class DataRange>
+	class MultithreadTrainer 
+	{
+	private:
+		typedef typename ANN::data_type data_type;
+		typedef vector<data_type> V1D;
+		typedef vector<V1D> V2D;
+		typedef vector<V2D> V3D;
+		typedef sub_range<DataRange> range;
+		typedef Trainer<ANN, range> single_trainer;
+		
+		ANN &ann;
+		const DataRange& full_range;
+
+		V3D prev_dw;
+		V2D prev_db;
+
+		data_type learning_rate;
+		data_type momentum;
+
+		vector<unique_ptr<range>> ranges; // need heap storage to prevent worker threads accessing corrupted (out-dated) stack frames
+		vector<unique_ptr<single_trainer>> trainers; // same heap storage
+		vector<thread> threads;
+
+		typedef pair<ReplyCode, data_type> reply;
+		sync_channel<JobCode> job_chan;
+		sync_channel<reply> reply_chan;
+
+		void worker_thread_loop(single_trainer *trainer, size_t id) {
+			while (1){
+				switch(job_chan.get(id)){
+					case JobCode::NOP: assert("received NOP" && false);
+				case JobCode::Compute:
+						reply_chan.set(id, reply(ReplyCode::Completed, trainer->train_multi_thread()));
+						break;
+					case JobCode::Exit:
+						return;
+				}
+			}
+		}
+
+		void apply_dw() {
+			data_type c = learning_rate / full_range.size();
+			size_t l = 0;
+			typedef typename single_trainer::V3D_iter V3D_iter;
+			typedef typename single_trainer::V2D_iter V2D_iter;
+			vector<V3D_iter> dw_iters;
+			vector<V2D_iter> db_iters;
+			transform(trainers.begin(), trainers.end(), back_inserter(dw_iters), [](const auto& t){return t->dw_begin();});
+			transform(trainers.begin(), trainers.end(), back_inserter(db_iters), [](const auto& t){return t->db_begin();});
+			for (auto &layer: ann){
+				size_t j = 0;
+				auto bj_iter = layer->bias_begin();
+				for (auto &wj: *layer){
+					size_t i = 0;
+					vector<V2D_iter> dwj_iters;
+					transform(dw_iters.begin(), dw_iters.end(), back_inserter(dwj_iters), [j](const auto& it){ return it->cbegin(); });
+					for (auto & wij: wj){
+						data_type sum_dw = 0;
+						for (auto & it: dwj_iters) sum_dw += it->at(i);
+						wij -= (prev_dw[l][j][i] = c * sum_dw + momentum * prev_dw[l][j][i]);
+						++i;
+					}
+					data_type sum_db = (data_type)0.0;
+					for (auto & it: db_iters) sum_db += it->at(j);
+					*bj_iter -= (prev_db[l][j] = c * sum_db + momentum * prev_db[l][j]);
+
+					for (auto & it: dwj_iters) ++it;
+					++j, ++bj_iter;
+				}
+				for (auto & it: dw_iters) ++it;
+				for (auto & it: db_iters) ++it;
+				++l;
+			}
+		}
+		void print_progress(size_t i, size_t epochs, data_type avg_err) {
+			size_t one_percent = epochs / 100;
+			double percentage = 100.0 * i / epochs;
+			if (!one_percent || i % one_percent == 0)
+				cout<<percentage<<"% epoch "<<i<<": error "<<avg_err<<"\n";
+		}
+	public:
+		MultithreadTrainer(ANN &_ann, const DataRange &data_range, size_t n_t = 4,
+			data_type alpha = (data_type)0.01, data_type beta = (data_type)0.9)
+		:	ann(_ann), full_range(data_range), prev_dw(ann.size()), prev_db(ann.size()),
+			learning_rate(alpha), momentum(beta), ranges(n_t), trainers(n_t), threads(n_t),
+			job_chan("{main->worker}", n_t), reply_chan("{worker->main}", n_t)
+		{
+			size_t n_hw_t = thread::hardware_concurrency();
+			if (n_hw_t < n_t) cerr<<"WARNING: requesting more threads("<<n_t<<") than the hardware supports("<<n_hw_t<<").\n";
+			size_t sub_range_sz = data_range.size() / n_t;
+			assert("more threads than data samples" && sub_range_sz);
+			
+			size_t l = 0;
+			for (auto &layer : ann){
+				prev_db[l].resize(layer->size());
+				prev_dw[l].resize(layer->size(), V1D(layer->input_size()));
+				++l;
+			}
+			for (size_t i = 0; i < n_t; ++i) {
+				ranges[i] = make_unique<range>(full_range, i * sub_range_sz, min(sub_range_sz, full_range.size() - i * sub_range_sz));
+				trainers[i] = make_unique<single_trainer>(true, ann, *(ranges[i].get()));
+				threads[i] = thread(&MultithreadTrainer::worker_thread_loop, this, trainers[i].get(), i);
+				// pointers in ranges / thrainers will outlive threads
+				// because they are deleted after the destructor ~MultithreadTrainer which joins the threads
+			}
+		}
+		data_type train(size_t epochs) 
+		{
+			data_type sum_err = 0;
+			for (size_t i = 0; i < epochs; ++i) {
+				job_chan.set_all(JobCode::Compute);
+				vector<reply> r = reply_chan.get_all();
+				sum_err = 0;
+				for (auto& rep : r){
+					assert("bad job" && rep.first == ReplyCode::Completed);
+					sum_err += rep.second;
+				}
+				apply_dw();
+				print_progress(i, epochs, sqrt(sum_err / full_range.size()));
+			}
+			sum_err = 0;
+			for (auto &t : trainers) sum_err += t->train_epilogue_multi_thread(); 
+			ann.print();
+			return sqrt(sum_err / full_range.size());
+		}
+		~MultithreadTrainer() 
+		{
+			job_chan.set_all(JobCode::Exit);
+			for (thread &worker : threads) worker.join();
+		}
+	};
 }
 
 
@@ -336,4 +718,4 @@ namespace NN
 
 // }
 
-#endif /*__NEURALNETWORK_H*/
+#endif /*NN_NEURALNETWORK_H*/
