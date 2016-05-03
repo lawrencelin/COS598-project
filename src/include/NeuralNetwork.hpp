@@ -15,14 +15,27 @@
 #include <numeric>
 #include <thread>
 
-// #include <boost/range/iterator_range.hpp>
-// #include <boost/range/algorithm.hpp>
-// #include <boost/range/iterator.hpp>
-
 namespace NN
 {
 	using namespace std;
-	// using namespace boost;
+
+	template <class T>
+	void print_V2D(ostream& os, const vector<vector<T>> & v2d){
+		for (auto & v1d : v2d){
+			for (auto & t: v1d) os<<t<<" ";
+			cerr<<"\n";
+		}
+	}
+	template <class T>
+	void print_V3D(ostream& os, const vector<vector<vector<T>>> & v3d){
+		for (auto & v2d : v3d){
+			for (auto & v1d : v2d){
+				for (auto & t: v1d) os<<t<<" ";
+				os<<"\n";
+			}
+			os<<"==================\n";
+		}
+	}
 	enum class ActFn
 	{
 		Sigmoid = 1,
@@ -77,18 +90,15 @@ namespace NN
 		: in_sz(in), sz(out), w(out, vector<Ty>(in)), b(out), act(_act)
 		{
 			Ty r = sqrt((Ty)6.0/(in + out));
-			// Ty r = 5;
 			
-			// mt19937 gen((random_device()()));
-			mt19937 gen;
+			mt19937 gen((random_device()()));
 			uniform_real_distribution<Ty> dist(-r, r);
 
 			for (auto &w_i : w) for (Ty &w_ij : w_i) w_ij = dist(gen);
 
 			for (Ty &b_i : b) b_i = dist(gen);
 		}
-
-		// virtual ~NeuralLayer() {}
+		bool operator==(const NeuralLayer& rhs) {return w==rhs.w && b==rhs.b && act == rhs.act;}
 		size_t size() const {return sz;}
 		size_t input_size() const  {return in_sz;}
 
@@ -107,7 +117,6 @@ namespace NN
 		}
 
 		Ty act_fn(Ty x) {
-			// assert(!isnan(x));
 			switch (act){
 				case ActFn::Sigmoid: return (Ty)1.0/((Ty)1.0 + exp(-x));
 				case ActFn::Tanh: return tanh(x);
@@ -115,7 +124,6 @@ namespace NN
 			}
 		}
 		Ty act_fn_derived(Ty fx) {
-			// assert(!isnan(x));
 			switch (act){
 				case ActFn::Sigmoid: return (Ty)fx * ((Ty)1.0 - fx);
 				case ActFn::Tanh: return (Ty)1.0 - fx * fx;
@@ -166,6 +174,12 @@ namespace NN
 		: layers(rhs.size()) {
 			for (size_t i = 0; i < layers.size(); ++i) layers[i] = make_unique<NeuralLayer<Ty>>(*rhs.layers[i]);
 		}
+		bool operator==(const NeuralNetwork & rhs) {
+			bool eq = true;
+			for (size_t i = 0; i < layers.size(); ++i)
+				eq = eq && *(layers[i]) == *(rhs.layers[i]);
+			return eq;
+		}
 		// virtual ~NeuralNetwork() {}
 		layer_iter begin() const { return layers.cbegin(); }
 		layer_iter end() const { return layers.cend(); }
@@ -189,7 +203,6 @@ namespace NN
 			ifstream fs(f);
 			assert("Cannot open file" && fs.is_open());
 			istream_iterator<Ty> file_reader(fs);
-			// istreambuf_iterator<Ty> end_file;
 			for (sample &dp : data){
 				for (Ty &ref : dp.first)
 					ref = *(file_reader++);
@@ -421,10 +434,12 @@ namespace NN
 				sum_err = 0;
 				fill_zero_3d(*partial_dw);
 				fill_zero_2d(*partial_db);
+				int k = 0;
 				for (auto &data : data_range){
 					feedforward(data.first);
 					backpropagate(data.first, data.second);
 					sum_err += compute_error(data.second);
+					k++;
 				}
 				print_progress(i, epochs);
 				apply_dw(data_range.size());
@@ -477,23 +492,11 @@ namespace NN
 		size_t start, sz;
 	public:
 		sub_range(const T &_t, size_t _start, size_t _sz)
-		: t(_t), start(_start), sz(_sz) 
-		{
-			// cout<<"sub_range init"<<start<<" "<<sz<<"\n";
-		}
+		: t(_t), start(_start), sz(_sz) {}
 		sub_range(const sub_range&) = delete;
-		iter begin() const {
-			// cout<<"sub_range begin "<<start<<" "<<sz<<"\n";
-			return t.begin() + (long)start;
-		}
-		iter end() const {
-			// cout<<"sub_range end "<<start<<" "<<sz<<"\n";
-			return t.begin() + (long)start + (long)sz;
-		}
-		size_t size() const {
-			// cout<<"sub_range size "<<start<<" "<<sz<<"\n";
-			return sz;
-		}
+		iter begin() const { return t.begin() + (long)start; }
+		iter end() const { return t.begin() + (long)start + (long)sz;}
+		size_t size() const { return sz; }
 	};
 
 	enum class JobCode{
@@ -544,27 +547,23 @@ namespace NN
 		void set(size_t k, T t = T()) {
 			unique_lock<mutex> l(cv_m);
 			v[k] = t;
-			// cout<<name<<" [set] loc:"<<k<<" "<<t<<"\n";
 			cv.notify_all();
 		}
 		void set_all(T t = T()) {
 			unique_lock<mutex> l(cv_m);
 			fill(v.begin(), v.end(), t);
-			// cout<<name<<" [set-all] "<<t<<"\n";
 			cv.notify_all();
 		}
 		T get(size_t k) {
 			unique_lock<mutex> l(cv_m);
 			cv.wait(l, [this, k](){return this->v[k] != T();});
 			T t = v[k];
-			// cout<<name<<" [get] location:"<<k<<" "<<t<<"\n";
 			v[k] = (T)0;
 			return t;
 		}
 		vector<T> get_all() {
 			unique_lock<mutex> l(cv_m);
 			cv.wait(l, [this](){return count(this->v.begin(), this->v.end(), T()) == 0;});
-			// cout<<name<<" [get-all]\n";
 			vector<T> ret = v;
 			fill(v.begin(), v.end(), T());
 			return ret;
@@ -612,7 +611,8 @@ namespace NN
 			}
 		}
 
-		void apply_dw() {
+		void apply_dw() 
+		{
 			data_type c = learning_rate / full_range.size();
 			size_t l = 0;
 			typedef typename single_trainer::V3D_iter V3D_iter;
@@ -624,10 +624,10 @@ namespace NN
 			for (auto &layer: ann){
 				size_t j = 0;
 				auto bj_iter = layer->bias_begin();
+				vector<V2D_iter> dwj_iters;
+				transform(dw_iters.begin(), dw_iters.end(), back_inserter(dwj_iters), [j](const auto& it){ return it->cbegin(); });
 				for (auto &wj: *layer){
 					size_t i = 0;
-					vector<V2D_iter> dwj_iters;
-					transform(dw_iters.begin(), dw_iters.end(), back_inserter(dwj_iters), [j](const auto& it){ return it->cbegin(); });
 					for (auto & wij: wj){
 						data_type sum_dw = 0;
 						for (auto & it: dwj_iters) sum_dw += it->at(i);
@@ -637,7 +637,6 @@ namespace NN
 					data_type sum_db = 0;
 					for (auto & it: db_iters) sum_db += it->at(j);
 					*bj_iter -= (prev_db[l][j] = c * sum_db + momentum * prev_db[l][j]);
-
 					for (auto & it: dwj_iters) ++it;
 					++j, ++bj_iter;
 				}
