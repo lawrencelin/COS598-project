@@ -14,7 +14,7 @@
 #include <tuple>
 #include <numeric>
 #include <thread>
-
+#include <chrono>
 namespace NN
 {
 	using namespace std;
@@ -792,21 +792,31 @@ namespace NN
 		}
 		data_type train(size_t epochs) 
 		{
+			using namespace chrono;
+			auto dispatch_time = high_resolution_clock::duration::zero();
+			auto gather_time = high_resolution_clock::duration::zero();
+
 			data_type sum_err = 0;
 			for (size_t i = 0; i < epochs; ++i) {
+				auto tp = high_resolution_clock::now();
 				job_chan.set_all(JobCode::Compute);
 				vector<reply> r = reply_chan.get_all();
+				dispatch_time += high_resolution_clock::now() - tp;
 				sum_err = 0;
 				for (auto& rep : r){
 					assert("bad job" && rep.first == ReplyCode::Completed);
 					sum_err += rep.second;
 				}
+				tp = high_resolution_clock::now();
 				apply_dw();
+				gather_time += high_resolution_clock::now() - tp;
 				print_progress(i, epochs, sqrt(sum_err / full_range.size()));
 			}
 			sum_err = 0;
 			for (auto &t : trainers) sum_err += t->train_epilogue_multi_thread(); 
 			ann.print();
+
+			cout<<"dispatch_time:"<<duration_cast<seconds>(dispatch_time).count()<<" gather_time:"<<duration_cast<seconds>(gather_time).count()<<"\n";
 			return sqrt(sum_err / full_range.size());
 		}
 		~MultithreadTrainer() 
