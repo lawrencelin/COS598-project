@@ -143,7 +143,7 @@ namespace NN
 		typedef typename vector<layer_type>::const_iterator layer_iter;
 		vector<layer_type> layers;
 		
-
+		// For iterating the neural network backwards
 		class reverse_adapter{
 		private:
 			vector<layer_type>& layers;
@@ -315,6 +315,72 @@ namespace NN
 			prev_dw.swap(partial_dw);
 			prev_db.swap(partial_db);
 		}
+
+		int sign(data_type x) {
+			if (x < 0) return -1;
+			if (x < 0.00000000000000001) return 0; // default zero tolerance
+			return 1;
+		}
+
+		void apply_dw_rprop( 
+			V3D_ptr& delta_weight, V3D_ptr& prev_gradient_w, 
+			V2D_ptr& delta_bias, V2D_ptr& prev_gradient_b, 
+			data_type delta_max) /* rprop; used only in batch learning */
+		{
+			//cout<<"df: "<<(*delta_weight)[1][1][1]<<"\n";
+
+			// values from original paper
+			data_type delta_min = 1e-10;
+			data_type eta_plus = 1.2, eta_minus = 0.5; 
+			size_t l = 0;
+			for (auto &layer: ann){
+				size_t j = 0;
+				auto b_j = layer->bias_begin();
+				for (auto &w_j: *layer){
+					size_t i = 0;
+					for (auto & w_ij: w_j){
+						auto& prev_gradient_w_ = (*prev_gradient_w)[l][j][i];
+						data_type cur_gradient_w = (*partial_dw)[l][j][i]; // the newly calculated gradient dE/dw
+						int change = sign(prev_gradient_w_ * cur_gradient_w);
+						if (change > 0) { // same sign
+							//cout<<"same sign\n";
+							(*delta_weight)[l][j][i] = min((*delta_weight)[l][j][i] * eta_plus, delta_max); // update delta
+							data_type dw = sign((*partial_dw)[l][j][i]) * (*delta_weight)[l][j][i];
+							w_ij -= dw; // update weight
+							prev_gradient_w_ = cur_gradient_w;
+						} else if (change < 0) { // change sign: last delta was too big
+							//w_ij -= (*delta_weight)[l][j][i]; // revert weight
+							(*delta_weight)[l][j][i] = max((*delta_weight)[l][j][i] * eta_minus, delta_min); // update delta
+							prev_gradient_w_ = 0; // set previous gradient to zero so that there will be no adjustment to delta next round
+						} else { // zero: no change in delta
+							data_type dw = sign((*partial_dw)[l][j][i]) * (*delta_weight)[l][j][i];
+							w_ij -= dw; // update weight
+							prev_gradient_w_ = cur_gradient_w;
+						}
+						++i;
+					}
+
+					auto& prev_gradient_b_ = (*prev_gradient_b)[l][j];
+					data_type gradient = (*partial_db)[l][j];
+					if (prev_gradient_b_ * gradient > 0) {
+						(*delta_bias)[l][j] = min((*delta_bias)[l][j] * eta_plus, delta_max);
+						data_type db = (-1) * sign((*partial_db)[l][j]) * (*delta_bias)[l][j];
+						*b_j += db;
+						prev_gradient_b_ = (*partial_db)[l][j];
+					} else if (prev_gradient_b_ * gradient < 0) {
+						(*delta_bias)[l][j] = max((*delta_bias)[l][j] * eta_minus, delta_min);
+						prev_gradient_b_ = 0;
+					} else {
+						data_type db = (-1) * sign((*partial_db)[l][j]) * (*delta_bias)[l][j];
+						*b_j += db;
+						prev_gradient_b_ = (*partial_db)[l][j];
+					}
+					++j, ++b_j;
+				}
+				++l;
+			}
+		}
+
 		void print_progress(size_t i, size_t epochs) {
 			size_t one_percent = epochs / 100;
 			double percentage = 100.0 * i / epochs;
@@ -339,6 +405,9 @@ namespace NN
 		}
 		void fill_zero_2d(V2D &v2d) {for (auto &v1d:v2d) fill(v1d.begin(), v1d.end(), 0.0); }
 		void fill_zero_3d(V3D &v3d) {for (auto &v2d:v3d) fill_zero_2d(v2d); }
+
+		void fill_init_value_2d(V2D &v2d, data_type initial_value) {for (auto &v1d:v2d) fill(v1d.begin(), v1d.end(), initial_value); }
+		void fill_init_value_3d(V3D &v3d, data_type initial_value) {for (auto &v2d:v3d) fill_init_value_2d(v2d, initial_value); }
 
 		void init_vectors(const vector<V2D*>& init_list_2d, const vector<V3D*>& init_list_3d) {
 			size_t l = 0;
@@ -446,6 +515,50 @@ namespace NN
 			}
 			return train_epilogue();
 		}
+
+		data_type train_batch_rprop(size_t epochs, data_type delta_initial = 0.1, data_type delta_max = 50.0) // rprop algorithmn based on original paper
+		{
+			assert("multi-thread trainer" && !multi_thread);
+
+			fill_zero_3d(*prev_dw);
+			fill_zero_2d(*prev_db);
+
+			// rprop specific
+			V3D_ptr prev_gradient_w = make_unique<V3D>(ann.size()); // dE/dw_ij(t-1)
+			V2D_ptr prev_gradient_b = make_unique<V2D>(ann.size()); // dE/db_i(t-1)
+			V3D_ptr delta_weight = make_unique<V3D>(ann.size()); // delta_ij for weight
+			V2D_ptr delta_bias = make_unique<V2D>(ann.size()); // delta_ij for bias
+			init_vectors(
+				{prev_gradient_b.get(), delta_bias.get()},
+				{prev_gradient_w.get(), delta_weight.get()});
+
+			fill_zero_3d(*prev_gradient_w);
+			fill_zero_2d(*prev_gradient_b); 
+			fill_init_value_3d(*delta_weight, delta_initial);
+			fill_init_value_2d(*delta_bias, delta_initial);
+
+			//cout<<(*delta_weight)[0][0][0];
+			//return 0.1;
+
+			for (size_t i = 0; i < epochs; ++i){
+				sum_err = 0;
+				fill_zero_3d(*partial_dw);
+				fill_zero_2d(*partial_db);
+				int k = 0;
+				//cout<<"ha: " <<(*delta_weight)[1][1][1]<<"\n";
+				for (auto &data : data_range){
+					feedforward(data.first);
+					backpropagate(data.first, data.second);
+					sum_err += compute_error(data.second);
+					k++;
+				}
+				print_progress(i, epochs);
+				apply_dw_rprop(delta_weight, prev_gradient_w, delta_bias, prev_gradient_b, delta_max);
+				//if (i == 2) return 0;
+			}
+			return train_epilogue();
+		}
+
 		// return sum of errors
 		data_type train_multi_thread()
 		{

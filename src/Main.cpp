@@ -24,8 +24,9 @@ int main(int argc, const char* argv[])
 	multi_trainer mt(ann_mt, ds, 2, 0.01f, 0.9f);
 	float_trainer st(ann_st, ds, 0.01f, 0.9f);
 
-	// data_type err = st.train_batch(1000000);
-	data_type err = mt.train(5000000);
+	//data_type err = st.train_batch(5000000);
+	data_type err = st.train_batch_rprop(5000000);
+	//data_type err = mt.train(5000000);
 	cout<<"Final training RMSE: "<<err<<"\n";
 	return 0;
 }
