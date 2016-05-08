@@ -505,6 +505,58 @@ namespace NN
 			}
 		}
 
+		void apply_dw_adagrad() {
+			/*
+			https://xcorr.net/2014/01/23/adagrad-eliminating-learning-rates-in-stochastic-gradient-descent/
+
+			autocorr = .95 #for example
+master_stepsize = 1e-2 #for example
+fudge_factor = 1e-6 #for numerical stability
+historical_grad = 0
+w = randn #initialize w
+while not converged:
+E,grad = computeGrad(w)
+if historical_grad == 0:
+historical_grad = g^2
+else:
+historical_grad = autocorr*historical_grad + (1-autocorr)*g^2
+adjusted_grad = grad / (fudge_factor + sqrt(historical_grad))
+w = w - master_stepsize*adjusted_grad
+*/
+			data_type autocorr = 0.95, fudge_factor = 1e-6, master_stepsize = 1e-2;
+			size_t l = 0;
+			for (auto &layer: ann){
+				size_t j = 0;
+				auto b_j = layer->bias_begin();
+				for (auto &w_j: *layer){
+					size_t i = 0;
+					for (auto & w_ij: w_j){
+						auto& grad_w = (*partial_dw)[l][j][i]; // new gradient
+						auto& historical_grad_w = (*prev_dw)[l][j][i]; // historical gradient
+						if (historical_grad_w > -0.0000001 && historical_grad_w < 0.0000001) {
+							historical_grad_w = grad_w * grad_w;
+						} else {
+							historical_grad_w = autocorr * historical_grad_w + (1-autocorr)*grad_w*grad_w;
+						}
+						data_type adjusted_grad_w = grad_w / (fudge_factor + sqrt(historical_grad_w)); //
+						w_ij -= master_stepsize * adjusted_grad_w;
+						++i;
+					}
+					auto& grad_d = (*partial_db)[l][j];
+					auto& historical_grad_d = (*prev_db)[l][j];
+					if (historical_grad_d > -0.0000001 && historical_grad_d < 0.0000001) {
+						historical_grad_d = grad_d * grad_d;
+					} else {
+						historical_grad_d = autocorr * historical_grad_d + (1-autocorr)*grad_d*grad_d;
+					}
+					data_type adjusted_grad_d = grad_d / (fudge_factor + sqrt(historical_grad_d));
+					*b_j -= master_stepsize * adjusted_grad_d;
+					++j, ++b_j;
+				}
+				++l;
+			}
+		}
+
 		/* implementation based on FANN library */
 		void apply_dw_quickprop2(size_t n_samples, V3D_ptr& prev_gradient_w, V2D_ptr& prev_gradient_b) {
 			data_type miu = 1.75; // maximum growth factor
@@ -833,6 +885,31 @@ namespace NN
 				}
 				print_progress(i, epochs);
 				apply_dw_quickprop(data_range.size(), prev_gradient_w, prev_gradient_b);
+			}
+			return train_epilogue();
+		}
+
+		data_type train_adagrad(size_t epochs) // quickprop algorithm
+		{
+			assert("multi-thread trainer" && !multi_thread);
+
+			fill_zero_3d(*prev_dw);
+			fill_zero_2d(*prev_db);
+
+			for (size_t i = 0; i < epochs; ++i){
+				sum_err = 0;
+				fill_zero_3d(*partial_dw);
+				fill_zero_2d(*partial_db);
+				int k = 0;
+
+				for (auto &data : data_range){
+					feedforward(data.first);
+					backpropagate(data.first, data.second);
+					sum_err += compute_error(data.second);
+					k++;
+				}
+				print_progress(i, epochs);
+				apply_dw_adagrad();
 			}
 			return train_epilogue();
 		}
