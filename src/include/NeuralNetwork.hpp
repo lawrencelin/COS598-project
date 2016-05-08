@@ -318,7 +318,7 @@ namespace NN
 
 		int sign(data_type x) {
 			if (x < 0) return -1;
-			if (x < 0.00000000000000001) return 0; // default zero tolerance
+			if (x < 0.000000000001) return 0; // default zero tolerance
 			return 1;
 		}
 
@@ -327,7 +327,6 @@ namespace NN
 			V2D_ptr& delta_bias, V2D_ptr& prev_gradient_b, 
 			data_type delta_max) /* rprop; used only in batch learning */
 		{
-			//cout<<"df: "<<(*delta_weight)[1][1][1]<<"\n";
 
 			// values from original paper
 			data_type delta_min = 1e-10;
@@ -375,6 +374,156 @@ namespace NN
 						*b_j += db;
 						prev_gradient_b_ = (*partial_db)[l][j];
 					}
+					++j, ++b_j;
+				}
+				++l;
+			}
+		}
+
+		/* implementation based on original paper */
+		void apply_dw_quickprop(size_t n_samples, V3D_ptr& prev_gradient_w, V2D_ptr& prev_gradient_b) {
+			data_type miu = 1.75; // maximum growth factor
+			data_type epsilon = learning_rate / n_samples;
+			data_type decay = -0.0001;
+
+			size_t l = 0;
+			for (auto &layer: ann){
+				size_t j = 0;
+				auto b_j = layer->bias_begin();
+				for (auto &w_j: *layer){
+					size_t i = 0;
+					for (auto & w_ij: w_j){
+						auto& prev_gradient_w_ = (*prev_gradient_w)[l][j][i]; // previous weight slope
+						auto& dw_ = (*prev_dw)[l][j][i]; // previous delta w
+						data_type cur_gradient_w = (*partial_dw)[l][j][i] + decay * w_ij; // current slope
+						//cout << cur_gradient_w << "\n";
+						int change = sign(prev_gradient_w_ * cur_gradient_w);
+						//if (prev_gradient_w_ == cur_gradient_w) cout << "wo ca!!!" << cur_gradient_w <<"\n";
+
+						// if (prev_gradient_w_ == cur_gradient_w) {
+						// 	dw_ = epsilon * cur_gradient_w;
+						// } else {
+							// data_type factor = min(cur_gradient_w / (prev_gradient_w_ - cur_gradient_w), miu);
+						data_type factor = 0;
+						if (fabs(prev_gradient_w_ - cur_gradient_w) < 0.00000001) {
+							factor = miu;
+						} else {
+							factor = cur_gradient_w / (prev_gradient_w_ - cur_gradient_w);
+						}
+						if (change < 0) { // current slope is opposite in sign from previous slope			
+							dw_ = factor * dw_;
+						} else {
+							dw_ = factor * dw_ + epsilon * cur_gradient_w;
+						}
+						
+						w_ij += dw_; // update weight
+						prev_gradient_w_ = cur_gradient_w;
+						++i;
+					}
+
+					auto& prev_gradient_b_ = (*prev_gradient_b)[l][j]; // previous bias slope
+					auto& db_ = (*prev_db)[l][j]; // previous delta b
+					data_type cur_gradient_b = (*partial_db)[l][j] + decay * (*b_j);
+					int change = sign(prev_gradient_b_ * cur_gradient_b);
+					data_type factor = 0;
+						if (fabs(prev_gradient_b_ - cur_gradient_b) < 0.00000001) {
+							factor = miu;
+						} else {
+							factor = cur_gradient_b / (prev_gradient_b_ - cur_gradient_b);
+						}
+
+					if (change < 0) {
+						db_ = factor * db_;
+					} else {
+						db_ = factor * db_ + epsilon * cur_gradient_b;
+					}
+					*b_j += db_;
+					prev_gradient_b_ = cur_gradient_b;
+					++j, ++b_j;
+				}
+				++l;
+			}
+		}
+
+		/* implementation based on FANN library */
+		void apply_dw_quickprop2(size_t n_samples, V3D_ptr& prev_gradient_w, V2D_ptr& prev_gradient_b) {
+			data_type miu = 1.75; // maximum growth factor
+			data_type epsilon = learning_rate / n_samples;
+			data_type decay = -0.0001;
+			data_type shrink_factor = miu / (1.0 + miu);
+
+			size_t l = 0;
+			for (auto &layer: ann){
+				size_t j = 0;
+				auto b_j = layer->bias_begin();
+				for (auto &w_j: *layer){
+					size_t i = 0;
+					for (auto & w_ij: w_j){
+						auto& prev_gradient_w_ = (*prev_gradient_w)[l][j][i]; // previous weight slope
+						auto& dw_ = (*prev_dw)[l][j][i]; // previous delta w
+						data_type cur_gradient_w = (*partial_dw)[l][j][i] + decay * w_ij; // current slope
+						data_type next_step = 0.0;
+						if (dw_ > 0.001) {
+							if (cur_gradient_w > 0.0) {
+								next_step += epsilon * cur_gradient_w;
+							}
+
+							if (cur_gradient_w > (shrink_factor * prev_gradient_w_)) {
+								next_step += miu * dw_;
+							} else {
+								next_step += dw_ * cur_gradient_w / (prev_gradient_w_ - cur_gradient_w);
+							}
+						} else if (dw_ < -0.001) {
+							if (cur_gradient_w < 0.0) {
+								next_step += epsilon * cur_gradient_w;
+							}
+
+							if (cur_gradient_w < (shrink_factor * prev_gradient_w_)) {
+								next_step += miu * dw_;
+							} else {
+								next_step += dw_ * cur_gradient_w / (prev_gradient_w_ - cur_gradient_w);
+							}
+						} else {
+							next_step += epsilon * cur_gradient_w;
+						}
+						
+						dw_ = next_step;
+						w_ij += dw_; // update weight
+						prev_gradient_w_ = cur_gradient_w;
+						++i;
+					}
+
+					auto& prev_gradient_b_ = (*prev_gradient_b)[l][j]; // previous bias slope
+					auto& db_ = (*prev_db)[l][j]; // previous delta b
+					data_type cur_gradient_b = (*partial_db)[l][j] + decay * (*b_j);
+					data_type next_step = 0.0;
+					if (db_ > 0.001) {
+						if (cur_gradient_b > 0.0) {
+							next_step += epsilon * cur_gradient_b;
+						}
+
+						if (cur_gradient_b > (shrink_factor * prev_gradient_b_)) {
+							next_step += miu * db_;
+						} else {
+							next_step += db_ * cur_gradient_b / (prev_gradient_b_ - cur_gradient_b);
+						}
+					} else if (db_ < -0.001) {
+						if (cur_gradient_b < 0.0) {
+							next_step += epsilon * cur_gradient_b;
+						}
+
+						if (cur_gradient_b < (shrink_factor * prev_gradient_b_)) {
+							next_step += miu * db_;
+						} else {
+							next_step += db_ * cur_gradient_b / (prev_gradient_b_ - cur_gradient_b);
+						}
+					} else {
+						next_step += epsilon * cur_gradient_b;
+					}
+
+					db_ = next_step;
+					*b_j += db_;
+					prev_gradient_b_ = cur_gradient_b;
 					++j, ++b_j;
 				}
 				++l;
@@ -554,7 +703,42 @@ namespace NN
 				}
 				print_progress(i, epochs);
 				apply_dw_rprop(delta_weight, prev_gradient_w, delta_bias, prev_gradient_b, delta_max);
-				//if (i == 2) return 0;
+			}
+			return train_epilogue();
+		}
+
+		data_type train_quickprop(size_t epochs) // quickprop algorithm
+		{
+			assert("multi-thread trainer" && !multi_thread);
+
+			fill_zero_3d(*prev_dw);
+			fill_zero_2d(*prev_db);
+
+			// rprop specific
+			V3D_ptr prev_gradient_w = make_unique<V3D>(ann.size()); // dE/dw_ij(t-1)
+			V2D_ptr prev_gradient_b = make_unique<V2D>(ann.size()); // dE/db_i(t-1)
+
+			init_vectors(
+				{prev_gradient_b.get()},
+				{prev_gradient_w.get()});
+
+			fill_zero_3d(*prev_gradient_w);
+			fill_zero_2d(*prev_gradient_b); 
+
+			for (size_t i = 0; i < epochs; ++i){
+				sum_err = 0;
+				fill_zero_3d(*partial_dw);
+				fill_zero_2d(*partial_db);
+				int k = 0;
+
+				for (auto &data : data_range){
+					feedforward(data.first);
+					backpropagate(data.first, data.second);
+					sum_err += compute_error(data.second);
+					k++;
+				}
+				print_progress(i, epochs);
+				apply_dw_quickprop(data_range.size(), prev_gradient_w, prev_gradient_b);
 			}
 			return train_epilogue();
 		}
