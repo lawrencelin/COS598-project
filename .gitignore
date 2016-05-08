@@ -2,3 +2,4 @@ test
 *.dSYM
 *.o
 .DS_Store
+.Makefile.swp
