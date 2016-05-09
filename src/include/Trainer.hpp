@@ -43,8 +43,11 @@ namespace NN
 			for (auto &layer: ann) {
 				if (l) layer->feedforward(act[l-1].cbegin(), act[l].begin());
 				else layer->feedforward(input.cbegin(), act[l].begin());
+				for (auto& v : act[l])
+					assert(!isnan(v));
 				++l;
 			}
+
 		}
  		template <class Output>
 		data_type compute_error(const Output &target) // mean_sq_err
@@ -55,7 +58,7 @@ namespace NN
 							[](data_type t, data_type o){ return (t-o)*(t-o);}) / (data_type)target.size();
 				case ErrFn::CrossEntropy:
 					return inner_product(target.cbegin(), target.cend(), output_act.cbegin(), 0.0, plus<data_type>(), 
-							[](data_type t, data_type o){ return -t*log(o);});
+							[](data_type t, data_type o){ return -t*log(o > 0 ? o : numeric_limits<data_type>::epsilon());});
 			}
 		}
 		// d(E) same for sq err and log cross entropy, provided d(o)/d(net) = 1

@@ -95,6 +95,7 @@ namespace NN
 			}
 			Ty r = sqrt((Ty)6.0/(in + out));
 			mt19937 gen((random_device()()));
+			// mt19937 gen;
 			uniform_real_distribution<Ty> dist(-r, r);
 
 			for (auto &w_i : w) for (Ty &w_ij : w_i) w_ij = dist(gen);
