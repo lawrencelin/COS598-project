@@ -12,11 +12,12 @@ HEADERS := $(wildcard $(INC_DIR)/*.hpp)
 # OBJ := $(SRC:.cpp=.o)
 
 CXX := clang++
-CXXFLAGS :=  -I $(INC_DIR) -O0 -std=c++14 -stdlib=libc++ -lboost_system-mt -lboost_serialization-mt -g -Wall 
+CXXFLAGS :=  -I $(INC_DIR) -O0 -std=c++14 -stdlib=libc++ -g -Wall
+# -lboost_system-mt -lboost_serialization-mt -g -Wall 
 #-Weverything -Wno-c++98-compat -Wno-padded -Wno-old-style-cast -Wno-conversion -Wno-weak-vtables -Wno-deprecated
 
 
-all: local host worker
+all: local
 
 local: $(MAIN) $(HEADERS)
 	$(CXX) $(CXXFLAGS) -o $@ $(MAIN)
