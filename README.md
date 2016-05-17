@@ -3,4 +3,3 @@ Topic: Optimizing ANN Training on Small Cluster of Machines
 
 Authors: Lawrence Lin, Will Yang
 
-We 

@@ -1,8 +1,8 @@
-#ifndef NN_NN_H
-#define NN_NN_H
+#ifndef NN_NN_HPP
+#define NN_NN_HPP
 
 #include <NeuralNetwork.hpp>
 #include <Trainer.hpp>
 #include <MultithreadTrainer.hpp>
 
-#endif /*NN_NN_H*/
+#endif /*NN_NN_HPP*/

@@ -1,5 +1,5 @@
-#ifndef NN_NEURALLAYER_H
-#define NN_NEURALLAYER_H
+#ifndef NN_NEURALLAYER_HPP
+#define NN_NEURALLAYER_HPP
 
 #include <Utility.hpp>
 
@@ -68,7 +68,7 @@ namespace NN
 			// cout<<"\n";
 		}
 		typedef Ty data_type;
-		NeuralLayer(size_t in, size_t out, ActFn _act = ActFn::Sigmoid)
+		NeuralLayer(size_t in, size_t out, ActFn _act = ActFn::Sigmoid, bool init_random_w = true)
 		: in_sz(in), sz(out), w(out, vector<Ty>(in)), b(out), act(_act)
 		{
 			switch (act){
@@ -93,6 +93,9 @@ namespace NN
 					d_act_fn = [](Ty fx){return (void)fx, 1;}; break; // tackle -Wunused-parameter
 					// trick for softmax output layer d(cross entropy)/dWji = (Act[j] - Target[j]) * Act[i]
 			}
+			
+			if (!init_random_w) return;
+			
 			Ty r = sqrt((Ty)6.0/(in + out));
 			mt19937 gen((random_device()()));
 			// mt19937 gen;
@@ -136,4 +139,4 @@ namespace NN
 	};
 }
 
-#endif /*NN_NEURALLAYER_H*/
+#endif /*NN_NEURALLAYER_HPP*/

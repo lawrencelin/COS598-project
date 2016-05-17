@@ -1,5 +1,5 @@
-#ifndef NN_TRAINER_H
-#define NN_TRAINER_H
+#ifndef NN_TRAINER_HPP
+#define NN_TRAINER_HPP
 
 #include <Utility.hpp>
 
@@ -774,4 +774,4 @@ namespace NN
 	};
 }
 
-#endif /*NN_TRAINER_H*/
+#endif /*NN_TRAINER_HPP*/

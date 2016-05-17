@@ -1,5 +1,5 @@
-#ifndef NN_MULTITHREADTRAINER_H
-#define NN_MULTITHREADTRAINER_H
+#ifndef NN_MULTITHREADTRAINER_HPP
+#define NN_MULTITHREADTRAINER_HPP
 
 #include <Trainer.hpp>
 
@@ -122,7 +122,35 @@ namespace NN
 				}
 			}
 		}
+		void acc_partial_dw()
+		{
+			size_t l = 0;
+			typedef typename single_trainer::V3D_iter V3D_iter;
+			typedef typename single_trainer::V2D_iter V2D_iter;
+			vector<V3D_iter> dw_iters;
+			vector<V2D_iter> db_iters;
+			transform(trainers.begin(), trainers.end(), back_inserter(dw_iters), [](const auto& t){return t->dw_begin();});
+			transform(trainers.begin(), trainers.end(), back_inserter(db_iters), [](const auto& t){return t->db_begin();});
+			for (auto &layer: ann) {
+				vector<V2D_iter> dwj_iters;
+				transform(dw_iters.begin(), dw_iters.end(), back_inserter(dwj_iters), [](const auto& it){ return it->cbegin(); });
+				for (size_t j = 0; j < layer->size(); ++j) {
+					for (size_t i = 0; i < layer->input_size(); ++i) {
+						data_type sum_dw = 0;
+						for (auto & it: dwj_iters) sum_dw += it->at(i);
+						prev_dw[l][j][i] = sum_dw;
+					}
+					data_type sum_db = 0;
+					for (auto & it: db_iters) sum_db += it->at(j);
+					prev_db[l][j] = sum_db;
+					for (auto & it: dwj_iters) ++it;
+				}
+				for (auto & it: dw_iters) ++it;
+				for (auto & it: db_iters) ++it;
+				++l;
+			}
 
+		}
 		void apply_dw() 
 		{
 			data_type c = learning_rate / full_range.size();
@@ -212,6 +240,18 @@ namespace NN
 			} 
 		}
 
+		void train_once()
+		{
+			job_chan.set_all(JobCode::Compute);
+			vector<reply> r = reply_chan.get_all();
+			for (auto& rep : r) 
+				assert("bad job" && rep.first == ReplyCode::Completed);
+			acc_partial_dw();
+		}
+
+		const V3D &get_dw() const { return prev_dw; }
+		const V2D &get_db() const { return prev_db; }
+
 		void train(size_t epochs, size_t p = 100) 
 		{
 			using namespace chrono;
@@ -249,4 +289,4 @@ namespace NN
 	};
 }
 
-#endif /*NN_MULTITHREADTRAINER_H*/
+#endif /*NN_MULTITHREADTRAINER_HPP*/

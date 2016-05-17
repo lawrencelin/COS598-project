@@ -1,5 +1,5 @@
-#ifndef NN_UTILITY_H
-#define NN_UTILITY_H
+#ifndef NN_UTILITY_HPP
+#define NN_UTILITY_HPP
 
 
 #include <initializer_list>
@@ -56,6 +56,7 @@ namespace NN
 		vector<sample> data;
 	public:
 		typedef typename vector<sample>::const_iterator sample_iter;
+		DataSet() {}
 		DataSet(const char *f, size_t n, size_t _in_sz, size_t _out_sz)  // if n * (in_sz + out_sz) > #of data in file, this function crashes.
 		:	in_sz(_in_sz), out_sz(_out_sz), 
 			data(n, sample(piecewise_construct, forward_as_tuple(in_sz), forward_as_tuple(out_sz)))
@@ -87,22 +88,26 @@ namespace NN
 		sample_iter begin() const { return data.cbegin(); }
 		sample_iter end() const { return data.cend(); }
 		size_t size() const {return data.size(); }
+		size_t input_size() const { return in_sz; }
+		size_t output_size() const { return out_sz; }
 	};
 
 	template<class T>
 	class sub_range {
 	private:
-		typedef typename T::sample_iter iter;
+		typedef typename T::sample_iter sample_iter;
 		const T &t;
 		size_t start, sz;
 	public:
 		sub_range(const T &_t, size_t _start, size_t _sz)
 		: t(_t), start(_start), sz(_sz) {}
 		sub_range(const sub_range&) = delete;
-		iter begin() const { return t.begin() + (long)start; }
-		iter end() const { return t.begin() + (long)start + (long)sz;}
+		sample_iter begin() const { return t.begin() + (long)start; }
+		sample_iter end() const { return t.begin() + (long)start + (long)sz;}
 		size_t size() const { return sz; }
+		size_t input_size() const { return t.input_size(); }
+		size_t output_size() const { return t.output_size(); }
 	};
 }
 
-#endif /*NN_UTILITY_H*/
+#endif /*NN_UTILITY_HPP*/

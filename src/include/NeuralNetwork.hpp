@@ -1,5 +1,5 @@
-#ifndef NN_NEURALNETWORK_H
-#define NN_NEURALNETWORK_H
+#ifndef NN_NEURALNETWORK_HPP
+#define NN_NEURALNETWORK_HPP
 
 #include <NeuralLayer.hpp>
 
@@ -28,14 +28,17 @@ namespace NN
 		};
 
 	public:
+		const ActFn hidden_type;
+		const ActFn output_type;
 		typedef Ty data_type;
 		typedef typename layer_type::pointer layer_ptr;
 		void print() {for (auto &layer: layers) layer->print();}
-		NeuralNetwork(const initializer_list<size_t> l, const ActFn hidden_type = ActFn::Sigmoid, const ActFn output_type = ActFn::Linear)
+		NeuralNetwork(const vector<size_t>& l, const ActFn _hidden_type = ActFn::Sigmoid, const ActFn _output_type = ActFn::Linear)
 		: layers((
-			assert("Softmax is only for output layer" && hidden_type != ActFn::Softmax),
+			assert("Softmax is only for output layer" && _hidden_type != ActFn::Softmax),
 			assert("NeuralNetwork need at least one non-input layer!" && l.size() > 1),
-			l.size() - 1))
+			l.size() - 1)),
+			hidden_type(_hidden_type), output_type(_output_type)
 		{
 			size_t in, i = 0;
 			for (size_t out : l) {
@@ -63,4 +66,4 @@ namespace NN
 	};
 }
 
-#endif /*NN_NEURALNETWORK_H*/
+#endif /*NN_NEURALNETWORK_HPP*/
