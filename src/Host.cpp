@@ -7,6 +7,7 @@
 #include <exception>
 #include <Connection.hpp>
 #include <NN.hpp>
+#include <chrono>
 
 using namespace std;
 
@@ -23,6 +24,7 @@ private:
 	typedef sub_range<DataRange> range;
 	typedef unique_ptr<range> range_ptr;
 	typedef shared_ptr<DeltaMessage> delta_msg_ptr; // should be unique_ptr
+	typedef chrono::high_resolution_clock::time_point time_point;
 	ANN &ann;
 	const DataRange &full_range;
 	size_t n_worker;
@@ -33,6 +35,9 @@ private:
 
 	shared_ptr<InitMessage> init_msg;
 	delta_msg_ptr delta_msg;
+
+	time_point start_time;
+	vector<time_point> worker_start_time;
 
 	size_t total_epochs;
 	size_t trained_epochs;
@@ -59,7 +64,7 @@ private:
 		return;
 	}
 	void epilogue() {
-		cout<<"Training ended.\n";
+		cout<<"[host end] "<<chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now() - start_time).count()<<"\n";
 		close();
 	}
 	void print_progress() {
@@ -69,17 +74,29 @@ private:
 		if (!result) { close(); return; }
 		ready[id] = true;
 		partial_delta[id] = dynamic_pointer_cast<DeltaMessage>(in_msg);
+
+		if (trained_epochs) {
+			cout<<"[host receive] "<<chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now() - worker_start_time[id]).count()<<"\n";
+		}
+
 		for (bool r : ready) if (!r) return;
 
 		if (trained_epochs) {	
 			delta_msg->accumulate(partial_delta);
 			delta_msg->apply_dw(ann);
+		} else {
+			// first epoch
+			cout<<"[host start]\n";
+			start_time = chrono::high_resolution_clock::now();
 		}
+
 		if (trained_epochs == total_epochs) { epilogue(); return; }
 		ready.flip();
-		for (auto& conn : workers)
+		for (auto& conn : workers) {
+			worker_start_time[conn->id] = chrono::high_resolution_clock::now();
 			send_receive(delta_msg, conn, MsgCode::Delta_W2H, 
 				bind(&Host::start_training, this, placeholders::_1, conn->id, placeholders::_2));
+		}
 		trained_epochs++;
 		print_progress();
 
