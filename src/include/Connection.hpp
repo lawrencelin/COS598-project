@@ -78,7 +78,7 @@ public:
 		}
 		hidden_type = ann.hidden_type;
 		output_type = ann.output_type;
-		data->resize(sizeof(size_t) * (l + 2));
+		data->resize(sizeof(size_t) * (sizes.size() + 2));
 		size_t *ptr = copy(sizes.begin(), sizes.end(), (size_t*)(data->data()));
 		*ptr = (size_t)hidden_type;
 		*(ptr+1) = (size_t)output_type;
