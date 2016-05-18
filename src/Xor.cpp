@@ -14,7 +14,7 @@ void usage(){
 int main(int argc, const char* argv[])
 {
 	//(void) argc, (void)argv;
-	//assert("Must provide file name" && argc > 1);
+	// assert("Must provide file name" && argc > 1);
     if ( 2 != argc ){
         usage();
         exit(1);
@@ -34,20 +34,10 @@ int main(int argc, const char* argv[])
 	typedef MultithreadTrainer<float_network, float_dataset> multi_trainer;
 	// typedef Trainer<float_network, float_dataset> float_trainer;
 
-	float_network ann({784, 800, 400, 10}, ActFn::ReLU, ActFn::Softmax);
-	float_dataset ds_train(true, "data/img_train", "data/label_train", 3000);
-	float_dataset ds_test(true, "data/img_test", "data/label_test", 10000);
-
-	// float_dataset ds_train("data/xor8.txt", 256, 8, 1);	
-	// float_trainer trainer(ann, ds_train, 0.01f, 0.9f, ErrFn::CrossEntropy);
-	// trainer.set_test_data(&ds_test);
-	// trainer.train_batch(100, 100);
-	// trainer.train_rprop(100);
-	// trainer.train_rprop2(100);
-	// trainer.train_adagrad(100);
-	// trainer.train_quickprop(100);
-	multi_trainer mt(ann, ds_train, thread_num, 0.01f, 0.9f, ErrFn::CrossEntropy);
-	cout<<"mt.train(10,5) \n";
-	mt.train(10, 5);
+	float_network ann({8, 4, 2, 1}, ActFn::Tanh, ActFn::Linear);
+	float_dataset ds_train("data/xor8.txt", 256, 8, 1);	
+	multi_trainer mt(ann, ds_train, thread_num);
+	cout<<"mt.train(50000, 50) will be executed\n";
+	mt.train(50000, 50);
 	return 0;
 }

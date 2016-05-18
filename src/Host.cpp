@@ -31,7 +31,7 @@ private:
 	vector<delta_msg_ptr> partial_delta;
 	vector<bool> ready;
 
-	message_ptr init_msg;
+	shared_ptr<InitMessage> init_msg;
 	delta_msg_ptr delta_msg;
 
 	size_t total_epochs;
@@ -149,9 +149,11 @@ int main(int argc, char* argv[])
 		typedef DataSet<data_type> float_dataset;
 		typedef Host<float_network, float_dataset> float_server;
 
-		float_network ann({8, 4, 2, 1}, ActFn::Tanh, ActFn::Linear);
-		float_dataset ds("data/xor8.txt", 256, 8, 1);
-		float_server server(io_service, port, ann, ds, 2);
+        
+		float_network ann({784, 800, 400, 10}, ActFn::ReLU, ActFn::Softmax);
+
+		float_dataset ds(true, "data/img_train", "data/label_train", 3000);
+		float_server server(io_service, port, ann, ds, 2, 10);
 		io_service.run();
 	}
 	catch (std::exception& e)
